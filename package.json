@@ -1,0 +1,14 @@
+{
+  "name": "mini-maccms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "一个用于学习苹果CMS核心架构的最简影视CMS（Node.js + SQLite，零第三方依赖）",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node app/db.js --seed"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

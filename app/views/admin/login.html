@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · Mini MacCMS</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+  <form class="login-card" action="/admin/login" method="post">
+    <p class="eyebrow">MINI MACCMS</p>
+    <h1>后台登录</h1>
+    <p class="muted">默认账号：admin / admin123</p>
+
+    {if $err}
+      <div class="alert alert-error">{$err}</div>
+    {/if}
+    {if $msg}
+      <div class="alert alert-ok">{$msg}</div>
+    {/if}
+
+    <input type="hidden" name="_csrf" value="{$csrf}">
+
+    <label>
+      账号
+      <input type="text" name="admin_name" autocomplete="username" required>
+    </label>
+    <label>
+      密码
+      <input type="password" name="admin_pwd" autocomplete="current-password" required>
+    </label>
+
+    <button class="btn btn-primary" type="submit">登录</button>
+    <a class="muted" href="/">← 回前台</a>
+  </form>
+</body>
+</html>

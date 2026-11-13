@@ -1,0 +1,43 @@
+{include file="partials/header"}
+
+<section class="page-head">
+  <div>
+    <p class="eyebrow">搜索结果</p>
+    <h1>{if $wd}“{$wd}”{else}输入关键词{/if}</h1>
+  </div>
+  <p class="muted">{if $wd}共找到 {$result.total} 部{else}试试搜索影片名、演员或导演{/if}</p>
+</section>
+
+{if $wd}
+  {if $result.total == 0}
+    <div class="empty">没有找到相关影片。</div>
+  {else}
+    <div class="grid">
+      {foreach $result.list as $vo}
+        <a class="card" href="{:mac_url_vod_detail($vo)}">
+          {if $vo.vod_pic}
+            <img class="poster" src="{$vo.vod_pic}" alt="{$vo.vod_name}">
+          {else}
+            <div class="poster poster-text">{$vo.vod_name}</div>
+          {/if}
+          <div class="card-body">
+            <h3>{$vo.vod_name}</h3>
+            <p class="meta">{$vo.type_name} · {$vo.vod_year} · {$vo.vod_remarks}</p>
+          </div>
+        </a>
+      {/foreach}
+    </div>
+  {/if}
+
+  <nav class="pagination">
+    {foreach $pages as $p}
+      {if $p === '...'}
+        <span class="page-dot">...</span>
+      {else}
+        <a class="page-link {if $p == $result.page}active{/if}" href="{:$pageUrlFor($p)}">{$p}</a>
+      {/if}
+    {/foreach}
+  </nav>
+{/if}
+
+{include file="partials/footer"}

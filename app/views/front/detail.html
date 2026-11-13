@@ -1,0 +1,63 @@
+{include file="partials/header"}
+
+<article class="detail">
+  <div class="detail-side">
+    {if $vod.vod_pic}
+      <img class="detail-poster" src="{$vod.vod_pic}" alt="{$vod.vod_name}">
+    {else}
+      <div class="detail-poster poster-text">{$vod.vod_name}</div>
+    {/if}
+  </div>
+
+  <div class="detail-main">
+    <p class="eyebrow">影片详情</p>
+    <h1>{$vod.vod_name}</h1>
+    <p class="meta">
+      <a href="/type/{$vod.type_id}">{$vod.type_name}</a>
+      · {$vod.vod_year} · {$vod.vod_area} · {$vod.vod_lang}
+      · {$vod.vod_remarks}
+    </p>
+    <p class="meta">主演：{$vod.vod_actor}　导演：{$vod.vod_director}</p>
+    <p class="meta">点击：{$vod.vod_hits}　评分：{$vod.vod_score}</p>
+
+    <div class="content">
+      {$vod.vod_content}
+    </div>
+
+    <h2 class="sub-title">播放列表</h2>
+
+    {if $vod.play_list}
+      {foreach $vod.play_list as $line}
+        <div class="play-line">
+          <h3>{$line.from}</h3>
+          <div class="episodes">
+            {foreach $line.urls as $ep}
+              <a class="ep" href="{:mac_url_vod_play($vod, $line.sid, $ep.nid)}">{$ep.name}</a>
+            {/foreach}
+          </div>
+        </div>
+      {/foreach}
+    {else}
+      <p class="muted">暂无播放地址，请到后台编辑。</p>
+    {/if}
+
+    <h2 class="sub-title">相关推荐</h2>
+    <div class="grid grid-small">
+      {foreach $related as $vo}
+        <a class="card" href="{:mac_url_vod_detail($vo)}">
+          {if $vo.vod_pic}
+            <img class="poster" src="{$vo.vod_pic}" alt="{$vo.vod_name}">
+          {else}
+            <div class="poster poster-text">{$vo.vod_name}</div>
+          {/if}
+          <div class="card-body">
+            <h3>{$vo.vod_name}</h3>
+            <p class="meta">{$vo.vod_year} · {$vo.vod_remarks}</p>
+          </div>
+        </a>
+      {/foreach}
+    </div>
+  </div>
+</article>
+
+{include file="partials/footer"}

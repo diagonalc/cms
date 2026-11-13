@@ -1,0 +1,65 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">VIDEO</p>
+    <h1>影片管理</h1>
+  </div>
+  <a class="btn btn-primary" href="/admin/vods/edit">+ 新增影片</a>
+</div>
+
+<div class="panel">
+  <form class="toolbar" action="/admin/vods" method="get">
+    <input type="text" name="wd" value="{$wd}" placeholder="搜索影片名 / 演员">
+    <button class="btn" type="submit">搜索</button>
+    <span class="muted">共 {$result.total} 部</span>
+  </form>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>分类</th>
+        <th>年份</th>
+        <th>状态</th>
+        <th>点击</th>
+        <th>更新时间</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {foreach $result.list as $vo}
+        <tr>
+          <td>{$vo.vod_id}</td>
+          <td><a href="{:mac_url_vod_detail($vo)}" target="_blank">{$vo.vod_name}</a></td>
+          <td>{$vo.type_name}</td>
+          <td>{$vo.vod_year}</td>
+          <td>{if $vo.vod_status == 1}<span class="tag tag-ok">已发布</span>{else}<span class="tag">待审</span>{/if}</td>
+          <td>{$vo.vod_hits}</td>
+          <td>{:formatDateTime($vo.vod_time)}</td>
+          <td class="actions">
+            <a href="/admin/vods/edit?id={$vo.vod_id}">编辑</a>
+            <form action="/admin/vods/delete" method="post" onsubmit="return confirm('确定删除这部影片吗？')">
+              <input type="hidden" name="_csrf" value="{$csrf}">
+              <input type="hidden" name="vod_id" value="{$vo.vod_id}">
+              <button class="link-danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {/foreach}
+    </tbody>
+  </table>
+
+  <nav class="pagination">
+    {foreach $pages as $p}
+      {if $p === '...'}
+        <span class="page-dot">...</span>
+      {else}
+        <a class="page-link {if $p == $result.page}active{/if}" href="{:$pageUrlFor($p)}">{$p}</a>
+      {/if}
+    {/foreach}
+  </nav>
+</div>
+
+{include file="admin/partials/footer"}

@@ -1,0 +1,35 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">DASHBOARD</p>
+    <h1>仪表盘</h1>
+  </div>
+</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <strong>{$stats.types}</strong>
+    <span>分类总数</span>
+  </div>
+  <div class="stat">
+    <strong>{$stats.vods}</strong>
+    <span>影片总数</span>
+  </div>
+  <div class="stat">
+    <strong>{$stats.published}</strong>
+    <span>已发布</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>快速开始</h2>
+  <ol class="tips">
+    <li>先在「分类管理」建几个分类。</li>
+    <li>到「影片管理」新增影片，填写播放线路和每集的地址。</li>
+    <li>打开前台，从分类页点进详情页，再点某一集播放。</li>
+    <li>到「资源采集」填一个资源站 API，体验批量入库。</li>
+  </ol>
+</div>
+
+{include file="admin/partials/footer"}

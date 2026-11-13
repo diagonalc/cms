@@ -1,0 +1,98 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">CATEGORY</p>
+    <h1>分类管理</h1>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>{if $edit}编辑分类：{$edit.type_name}{else}新增分类{/if}</h2>
+
+  <form class="form-grid" action="/admin/types/save" method="post">
+    <input type="hidden" name="_csrf" value="{$csrf}">
+    {if $edit}
+      <input type="hidden" name="type_id" value="{$edit.type_id}">
+    {/if}
+
+    <label>
+      分类名称
+      <input type="text" name="type_name" value="{if $edit}{$edit.type_name}{/if}" required>
+    </label>
+
+    <label>
+      英文别名（留空自动生成）
+      <input type="text" name="type_en" value="{if $edit}{$edit.type_en}{/if}" placeholder="movie">
+    </label>
+
+    <label>
+      父分类
+      <select name="type_pid">
+        <option value="0">顶级分类</option>
+        {foreach $types as $t}
+          {if !$edit || $t.type_id != $edit.type_id}
+            <option value="{$t.type_id}" {if $edit && $edit.type_pid == $t.type_id}selected{/if}>{$t.type_name}</option>
+          {/if}
+        {/foreach}
+      </select>
+    </label>
+
+    <label>
+      排序（越大越靠前）
+      <input type="number" name="type_sort" value="{if $edit}{$edit.type_sort}{else}0{/if}">
+    </label>
+
+    <label>
+      状态
+      <select name="type_status">
+        <option value="1" {if !$edit || $edit.type_status == 1}selected{/if}>启用</option>
+        <option value="0" {if $edit && $edit.type_status == 0}selected{/if}>禁用</option>
+      </select>
+    </label>
+
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">保存分类</button>
+      {if $edit}<a class="btn" href="/admin/types">取消编辑</a>{/if}
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>分类列表</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>别名</th>
+        <th>父分类</th>
+        <th>排序</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {foreach $types as $t}
+        <tr>
+          <td>{$t.type_id}</td>
+          <td>{$t.type_name}</td>
+          <td>{$t.type_en}</td>
+          <td>{$t.parent_name}</td>
+          <td>{$t.type_sort}</td>
+          <td>{if $t.type_status == 1}<span class="tag tag-ok">启用</span>{else}<span class="tag">禁用</span>{/if}</td>
+          <td class="actions">
+            <a href="/admin/types?edit={$t.type_id}">编辑</a>
+            <form action="/admin/types/delete" method="post" onsubmit="return confirm('确定删除这个分类吗？')">
+              <input type="hidden" name="_csrf" value="{$csrf}">
+              <input type="hidden" name="type_id" value="{$t.type_id}">
+              <button class="link-danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {/foreach}
+    </tbody>
+  </table>
+</div>
+
+{include file="admin/partials/footer"}

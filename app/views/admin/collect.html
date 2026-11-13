@@ -1,0 +1,59 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">COLLECT</p>
+    <h1>资源采集</h1>
+  </div>
+</div>
+
+<div class="panel">
+  <p class="muted">
+    填写资源站 API（返回 JSON），系统会拉取影片、按分类映射后入库。
+    本站自带一个离线测试接口，默认已填好。
+  </p>
+
+  <form class="form-grid" action="/admin/collect" method="post">
+    <input type="hidden" name="_csrf" value="{$csrf}">
+
+    <label class="span-2">
+      资源站 API 地址
+      <input type="text" name="api_url" value="{$defaultUrl}" required>
+      <small class="hint">例如：https://资源站/api.php/provide/vod/?ac=list</small>
+    </label>
+
+    <label class="span-2">
+      分类映射（资源站分类ID=本站分类ID）
+      <textarea name="mapping" rows="4">{$mapping}</textarea>
+      <small class="hint">每行一条，例如 1=1 表示资源站分类 1 导入到本站分类 1。留空则尝试按分类名自动匹配。</small>
+    </label>
+
+    <div class="form-actions span-2">
+      <button class="btn btn-primary" type="submit">开始采集</button>
+    </div>
+  </form>
+</div>
+
+{if $stats}
+  <div class="panel">
+    <h2>采集结果</h2>
+    <div class="stat-grid">
+      <div class="stat"><strong>{$stats.total}</strong><span>资源总数</span></div>
+      <div class="stat"><strong>{$stats.inserted}</strong><span>新增</span></div>
+      <div class="stat"><strong>{$stats.updated}</strong><span>更新</span></div>
+      <div class="stat"><strong>{$stats.skipped}</strong><span>跳过</span></div>
+    </div>
+
+    {if $stats.messages.length}
+      <ul class="message-list">
+        {foreach $stats.messages as $m}
+          <li>{$m}</li>
+        {/foreach}
+      </ul>
+    {/if}
+
+    <p><a class="btn" href="/admin/vods">去影片管理查看 →</a></p>
+  </div>
+{/if}
+
+{include file="admin/partials/footer"}

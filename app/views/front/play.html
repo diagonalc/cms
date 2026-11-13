@@ -1,0 +1,38 @@
+{include file="partials/header"}
+
+<section class="play-head">
+  <p class="eyebrow">正在播放</p>
+  <h1>{$vod.vod_name} <span class="muted">— {$episode.name}</span></h1>
+  <p class="meta">线路：{$line.from} · <a href="{:mac_url_vod_detail($vod)}">返回详情</a></p>
+</section>
+
+<div class="player-wrap" data-src="{$episode.url}">
+  <video id="player-video" controls playsinline></video>
+  <iframe id="player-frame" title="播放器" allowfullscreen></iframe>
+</div>
+
+<section class="section">
+  <div class="section-head">
+    <h2>{$line.from} 线路</h2>
+    <span class="muted">共 {$line.urls.length} 集</span>
+  </div>
+  <div class="episodes">
+    {foreach $line.urls as $ep}
+      <a class="ep {if $ep.nid == $nid}active{/if}" href="{:mac_url_vod_play($vod, $line.sid, $ep.nid)}">{$ep.name}</a>
+    {/foreach}
+  </div>
+
+  <div class="play-nav">
+    {if $prev}
+      <a class="btn" href="{:mac_url_vod_play($vod, $sid, $prev.nid)}">← 上一集：{$prev.name}</a>
+    {/if}
+    {if $next}
+      <a class="btn" href="{:mac_url_vod_play($vod, $sid, $next.nid)}">下一集：{$next.name} →</a>
+    {/if}
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<script src="/static/player.js"></script>
+
+{include file="partials/footer"}

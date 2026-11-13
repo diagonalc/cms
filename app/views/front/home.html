@@ -1,0 +1,62 @@
+{include file="partials/header"}
+
+<section class="hero">
+  <div>
+    <p class="eyebrow">MINI MACCMS</p>
+    <h1>一个能跑通的影视 CMS</h1>
+    <p class="muted">分类、影片、播放、搜索、后台、采集，一条最小闭环。</p>
+  </div>
+  <div class="hero-tip">
+    <strong>后台账号</strong>
+    <span>admin / admin123</span>
+    <a href="/admin">进入后台 →</a>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>最新更新</h2>
+    <span class="muted">按入库时间倒序</span>
+  </div>
+
+  <div class="grid">
+    {foreach $latest as $vo}
+      <a class="card" href="{:mac_url_vod_detail($vo)}">
+        {if $vo.vod_pic}
+          <img class="poster" src="{$vo.vod_pic}" alt="{$vo.vod_name}">
+        {else}
+          <div class="poster poster-text">{$vo.vod_name}</div>
+        {/if}
+        <div class="card-body">
+          <h3>{$vo.vod_name}</h3>
+          <p class="meta">{$vo.type_name} · {$vo.vod_year} · {$vo.vod_remarks}</p>
+        </div>
+      </a>
+    {/foreach}
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>热门推荐</h2>
+    <span class="muted">按点击量倒序</span>
+  </div>
+
+  <div class="grid">
+    {foreach $hot as $vo}
+      <a class="card" href="{:mac_url_vod_detail($vo)}">
+        {if $vo.vod_pic}
+          <img class="poster" src="{$vo.vod_pic}" alt="{$vo.vod_name}">
+        {else}
+          <div class="poster poster-text">{$vo.vod_name}</div>
+        {/if}
+        <div class="card-body">
+          <h3>{$vo.vod_name}</h3>
+          <p class="meta">{$vo.type_name} · 点击 {$vo.vod_hits}</p>
+        </div>
+      </a>
+    {/foreach}
+  </div>
+</section>
+
+{include file="partials/footer"}
