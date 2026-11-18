@@ -4,6 +4,12 @@
   <p class="eyebrow">正在播放</p>
   <h1>{$vod.vod_name} <span class="muted">— {$episode.name}</span></h1>
   <p class="meta">线路：{$line.from} · <a href="{:mac_url_vod_detail($vod)}">返回详情</a></p>
+  {if !$line.direct}
+    <div class="alert alert-error">
+      当前线路不是直链 m3u8（通常是分享页/外链），可能无法直接播放。
+      请返回详情页，选择标有“直链”的线路。
+    </div>
+  {/if}
 </section>
 
 <div class="player-wrap" data-src="{$episode.url}">

@@ -583,6 +583,42 @@ textarea { resize: vertical; }
 
 /* ---------- 响应式 ---------- */
 
+.tag-error { background: #fee2e2; color: #991b1b; }
+
+.link-btn {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.code-editor {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.rules-help h3 {
+  margin: 18px 0 8px;
+  font-size: 15px;
+}
+
+.rules-help pre,
+.log-stats {
+  overflow-x: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 760px) {
   .site-header {
     flex-wrap: wrap;

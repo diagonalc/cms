@@ -1,0 +1,121 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">SOURCE EDIT</p>
+    <h1>{if $form.source_id}编辑采集源{else}新增采集源{/if}</h1>
+  </div>
+  <div class="actions">
+    {if $form.source_id}
+      <a class="btn" href="/admin/sources/logs?id={$form.source_id}">查看日志</a>
+    {/if}
+    <a class="btn" href="/admin/sources">← 返回列表</a>
+  </div>
+</div>
+
+<div class="panel">
+  <form class="form-grid" action="/admin/sources/save" method="post">
+    <input type="hidden" name="_csrf" value="{$csrf}">
+    <input type="hidden" name="source_id" value="{$form.source_id}">
+
+    <label>
+      采集源名称
+      <input type="text" name="source_name" value="{$form.source_name}" required>
+    </label>
+
+    <label>
+      规则类型
+      <select name="source_type">
+        {foreach $sourceTypes as $t}
+          <option value="{$t}" {if $t == $form.source_type}selected{/if}>{$t}</option>
+        {/foreach}
+      </select>
+      <small class="hint">json = JSONPath；xml = XML XPath；xpath = HTML XPath。</small>
+    </label>
+
+    <label>
+      定时间隔（分钟，0 = 只手动）
+      <input type="number" min="0" max="10080" name="source_interval" value="{$form.source_interval}">
+      <small class="hint">例如 60 表示每小时跑一次；服务每 30 秒检查一次。</small>
+    </label>
+
+    <label>
+      启用
+      <span>
+        <input type="checkbox" name="source_enabled" value="1" {if $form.source_enabled}checked{/if}>
+        勾选后按间隔自动运行
+      </span>
+    </label>
+
+    <label class="span-2">
+      规则 JSON
+      <textarea class="code-editor" name="source_config" rows="24" required>{$form.source_config}</textarea>
+      <small class="hint">
+        本站分类 ID：{foreach $types as $t}{$t.type_id}={$t.type_name}　{/foreach}<br>
+        占位符：@keyword（关键词）、@source（详情 ID）、@page（页码）、@sourceRaw（不编码的 source）。<br>
+        支持结构：search（url/list/name/source）+ detail（可选）+ fields + play。
+      </small>
+    </label>
+
+    <div class="form-actions span-2">
+      <button class="btn btn-primary" type="submit">保存采集源</button>
+      <a class="btn" href="/admin/sources">取消</a>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>规则速查</h2>
+  <div class="rules-help">
+    <h3>JSON</h3>
+    <pre>{
+  "typeId": 3,
+  "search": {
+    "url": "https://api.example.com/list?wd=@keyword&page=@page",
+    "list": "$.info.rows[*]",
+    "name": "$.vod_name",
+    "source": "$.vod_id"
+  },
+  "detail": { "url": "https://api.example.com/detail?id=@source" },
+  "fields": {
+    "vod_name": "$.info.vod_name",
+    "vod_pic": "$.info.vod_pic",
+    "vod_content": "$.info.vod_content"
+  },
+  "play": {
+    "from": "$.info.vod_play_from",
+    "url": "$.info.vod_play_url"
+  }
+}</pre>
+
+    <h3>XML / HTML XPath</h3>
+    <pre>{
+  "typeId": 3,
+  "search": {
+    "url": "https://site.com/search?wd=@keyword",
+    "list": "//div[contains(@class,'item')]",
+    "name": ".//h3/text()",
+    "source": "./a/@href"
+  },
+  "detail": { "url": "https://site.com@sourceRaw" },
+  "fields": {
+    "vod_name": "//h1/text()",
+    "vod_pic": "//img[@class='cover']/@src",
+    "vod_content": "//div[@class='desc']//text()"
+  },
+  "play": {
+    "groups": "//div[@class='line']",
+    "from": "./@data-from",
+    "episodes": ".//a",
+    "episodeName": "./text()",
+    "episodeUrl": "./@href"
+  }
+}</pre>
+
+    <p class="muted">
+      XPath 支持：//、.//、/、./、[@attr="x"]、[contains(@class,"x")]、[1]、[last()]、@attr、text()。
+    </p>
+  </div>
+</div>
+
+{include file="admin/partials/footer"}

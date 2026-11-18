@@ -89,6 +89,11 @@ function mac_url_search(keyword) {
   return `/search?wd=${encodeURIComponent(keyword || '')}`;
 }
 
+/** 是否是浏览器/播放器可以直接播放的直链（m3u8 或 mp4/webm 等）。 */
+function isDirectPlayUrl(url) {
+  return /\.(m3u8|mp4|webm|ogg|mov)(\?|$)/i.test(String(url || ''));
+}
+
 /** 把播放地址字符串展开成线路/剧集结构（maccms 的 mac_play_list 简化版）。 */
 function parsePlayList(from, url) {
   const fromList = from ? String(from).split('$$$') : [];
@@ -141,4 +146,5 @@ module.exports = {
   mac_url_vod_play,
   mac_url_search,
   parsePlayList,
+  isDirectPlayUrl,
 };

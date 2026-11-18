@@ -7,6 +7,7 @@ require('./app/db'); // 初始化数据库 + 演示数据
 const front = require('./app/controllers/front');
 const admin = require('./app/controllers/admin');
 const { getSession } = require('./app/session');
+const { startScheduler } = require('./app/sources');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -84,6 +85,13 @@ const routes = [
   ['GET', /^\/play\/(\d+)-(\d+)-(\d+)$/, ['id', 'sid', 'nid'], front.play],
   ['GET', /^\/search$/, [], front.search],
   ['GET', /^\/mock\/resource$/, [], front.mockResource],
+  ['GET', /^\/mock\/resource\.xml$/, [], front.mockResourceXml],
+  ['GET', /^\/mock\/resource\.pages$/, [], front.mockResourcePages],
+  ['GET', /^\/mock\/rules\/json\/search$/, [], front.mockRuleJsonSearch],
+  ['GET', /^\/mock\/rules\/json\/detail$/, [], front.mockRuleJsonDetail],
+  ['GET', /^\/mock\/rules\/xml\/search$/, [], front.mockResourceXml],
+  ['GET', /^\/mock\/rules\/html\/search$/, [], front.mockRuleHtmlSearch],
+  ['GET', /^\/mock\/rules\/html\/detail$/, [], front.mockRuleHtmlDetail],
 
   ['GET', /^\/admin\/login$/, [], admin.loginPage],
   ['POST', /^\/admin\/login$/, [], admin.loginSubmit],
@@ -98,6 +106,13 @@ const routes = [
   ['POST', /^\/admin\/vods\/delete$/, [], admin.vodDelete],
   ['GET', /^\/admin\/collect$/, [], admin.collectForm],
   ['POST', /^\/admin\/collect$/, [], admin.collectSubmit],
+  ['GET', /^\/admin\/sources$/, [], admin.sourceList],
+  ['GET', /^\/admin\/sources\/edit$/, [], admin.sourceEdit],
+  ['POST', /^\/admin\/sources\/save$/, [], admin.sourceSave],
+  ['POST', /^\/admin\/sources\/delete$/, [], admin.sourceDelete],
+  ['POST', /^\/admin\/sources\/toggle$/, [], admin.sourceToggle],
+  ['POST', /^\/admin\/sources\/run$/, [], admin.sourceRun],
+  ['GET', /^\/admin\/sources\/logs$/, [], admin.sourceLogs],
 ];
 
 const server = http.createServer(async (req, res) => {
@@ -160,5 +175,7 @@ server.listen(PORT, () => {
   console.log(`Mini MacCMS 已启动：http://localhost:${PORT}`);
   console.log(`后台地址：http://localhost:${PORT}/admin`);
   console.log('默认账号：admin / admin123');
+  console.log('采集定时任务已启动（每 30 秒检查一次）');
   console.log('停止服务：Ctrl + C');
+  startScheduler();
 });

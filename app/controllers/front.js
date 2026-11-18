@@ -174,12 +174,182 @@ function mockResource(ctx) {
         vod_remarks: '更新至2集',
         vod_content: '这是通过采集接口导入的测试电视剧。',
         vod_score: 7.8,
-        dl: {
-          m3u8: '第1集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8#第2集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-        },
+        // 真实苹果CMS JSON 接口用的是 vod_play_from / vod_play_url，这里也模拟一份
+        vod_play_from: 'm3u8',
+        vod_play_url: '第1集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8#第2集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
       },
     ],
   });
 }
 
-module.exports = { home, typePage, detail, play, search, mockResource, sendHtml, sendJson, notFound };
+/**
+ * 本地模拟分页接口：每页 1 条，共 3 页。
+ * 用来测试“起始页 / 采集页数”是否生效。
+ */
+function mockResourcePages(ctx) {
+  const page = Math.max(1, toInt(ctx.query.pg, 1));
+  const pagecount = 3;
+  sendJson(ctx.res, {
+    code: 1,
+    msg: '数据列表',
+    page,
+    pagecount,
+    limit: 1,
+    total: 3,
+    class: [{ type_id: 1, type_name: '电影' }],
+    list: [
+      {
+        vod_id: 9200 + page,
+        type_id: 1,
+        vod_name: `分页采集测试第${page}页`,
+        vod_year: '2026',
+        vod_area: '中国',
+        vod_lang: '国语',
+        vod_remarks: '测试',
+        vod_content: `这是分页采集第 ${page} 页的数据。`,
+        vod_play_from: 'm3u8',
+        vod_play_url: '第1集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+      },
+    ],
+  });
+}
+
+/* ---------------- 采集规则（JSON / XML / XPath）本地测试数据 ---------------- */
+
+function mockRuleJsonSearch(ctx) {
+  sendJson(ctx.res, {
+    code: 1,
+    msg: 'ok',
+    info: {
+      total: 2,
+      rows: [
+        { vod_id: 1, vod_name: 'JSON规则测试一' },
+        { vod_id: 2, vod_name: 'JSON规则测试二' },
+      ],
+    },
+  });
+}
+
+function mockRuleJsonDetail(ctx) {
+  const id = toInt(ctx.query.id, 1);
+  sendJson(ctx.res, {
+    code: 1,
+    msg: 'ok',
+    info: {
+      vod_name: `JSON规则测试${id === 1 ? '一' : '二'}`,
+      vod_pic: '',
+      vod_actor: 'JSON演员A,JSON演员B',
+      vod_director: 'JSON导演',
+      vod_year: '2026',
+      vod_area: '日本',
+      vod_lang: '日语',
+      vod_remarks: 'HD',
+      vod_content: `这是 JSON 规则采集的第 ${id} 条测试数据。`,
+      vod_score: 8.6,
+      vod_play_from: 'm3u8',
+      vod_play_url: '第1集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8#第2集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+    },
+  });
+}
+
+function mockRuleHtmlSearch(ctx) {
+  const html = `<!doctype html>
+<html><body>
+  <div class="list">
+    <div class="item"><a href="/mock/rules/html/detail?id=1"><h3>XPath规则测试一</h3></a></div>
+    <div class="item"><a href="/mock/rules/html/detail?id=2"><h3>XPath规则测试二</h3></a></div>
+  </div>
+</body></html>`;
+  ctx.res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  ctx.res.end(html);
+}
+
+function mockRuleHtmlDetail(ctx) {
+  const id = toInt(ctx.query.id, 1);
+  const name = `XPath规则测试${id === 1 ? '一' : '二'}`;
+  const html = `<!doctype html>
+<html><body>
+  <h1>${name}</h1>
+  <img class="cover" src="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8" alt="${name}">
+  <span class="actor">XPath演员A</span>
+  <div class="desc">这是 XPath 规则采集的第 ${id} 条测试数据。<br>第二段简介。</div>
+  <div class="line" data-from="m3u8">
+    <a href="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8">第1集</a>
+    <a href="https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8">第2集</a>
+  </div>
+</body></html>`;
+  ctx.res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  ctx.res.end(html);
+}
+
+/**
+ * 本地模拟资源站的 XML 接口，用于测试 XML 采集。
+ * 结构模仿苹果CMS资源站：rss > list > class/video/dl/dd。
+ */
+function mockResourceXml(ctx) {
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<rss version="5.1">
+  <list page="1" pagecount="1" pagesize="20" recordcount="2">
+    <class>
+      <ty id="1">电影</ty>
+      <ty id="2">电视剧</ty>
+    </class>
+    <video>
+      <id>9101</id>
+      <tid>1</tid>
+      <name><![CDATA[XML采集测试电影]]></name>
+      <pic></pic>
+      <actor><![CDATA[XML演员A,XML演员B]]></actor>
+      <director><![CDATA[XML导演]]></director>
+      <year>2026</year>
+      <area>中国</area>
+      <lang>国语</lang>
+      <note>HD</note>
+      <score>8.9</score>
+      <des><![CDATA[这是通过 XML 接口导入的测试电影。]]></des>
+      <dl>
+        <dd flag="m3u8"><![CDATA[第1集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8?x=1&y=2#第2集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8]]></dd>
+        <dd flag="iframe"><![CDATA[第1集$https://example.com/embed/xml1]]></dd>
+      </dl>
+    </video>
+    <video>
+      <id>9102</id>
+      <tid>2</tid>
+      <name><![CDATA[XML采集测试电视剧]]></name>
+      <pic></pic>
+      <actor>XML演员C</actor>
+      <director>XML导演B</director>
+      <year>2025</year>
+      <area>中国</area>
+      <lang>国语</lang>
+      <note>HD &amp; 中字</note>
+      <score>7.7</score>
+      <des>这是通过 XML 接口导入的测试电视剧。</des>
+      <dl>
+        <dd flag="m3u8">第1集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8?a=1&amp;b=2#第2集$https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8</dd>
+      </dl>
+    </video>
+  </list>
+</rss>`;
+
+  ctx.res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+  ctx.res.end(xml);
+}
+
+module.exports = {
+  home,
+  typePage,
+  detail,
+  play,
+  search,
+  mockResource,
+  mockResourceXml,
+  mockResourcePages,
+  mockRuleJsonSearch,
+  mockRuleJsonDetail,
+  mockRuleHtmlSearch,
+  mockRuleHtmlDetail,
+  sendHtml,
+  sendJson,
+  notFound,
+};

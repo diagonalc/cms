@@ -29,7 +29,14 @@
     {if $vod.play_list}
       {foreach $vod.play_list as $line}
         <div class="play-line">
-          <h3>{$line.from}</h3>
+          <h3>
+            {$line.from}
+            {if $line.direct}
+              <span class="tag tag-ok">直链</span>
+            {else}
+              <span class="tag">需解析/外链</span>
+            {/if}
+          </h3>
           <div class="episodes">
             {foreach $line.urls as $ep}
               <a class="ep" href="{:mac_url_vod_play($vod, $line.sid, $ep.nid)}">{$ep.name}</a>

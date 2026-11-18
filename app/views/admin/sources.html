@@ -1,0 +1,122 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">COLLECT SOURCES</p>
+    <h1>采集源管理</h1>
+  </div>
+  <a class="btn btn-primary" href="/admin/sources/edit">+ 新增采集源</a>
+</div>
+
+<div class="panel">
+  <p class="muted">
+    采集源支持 JSONPath、XML XPath、HTML XPath 三种规则。
+    定时任务由服务进程每 30 秒检查一次；间隔为 0 表示只手动运行。
+  </p>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>类型</th>
+        <th>间隔</th>
+        <th>状态</th>
+        <th>上次运行</th>
+        <th>下次运行</th>
+        <th>最近结果</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {foreach $list as $s}
+        <tr>
+          <td>{$s.source_id}</td>
+          <td>
+            <strong>{$s.source_name}</strong>
+            <div class="meta">{$s.last_message}</div>
+          </td>
+          <td><span class="tag">{$s.source_type}</span></td>
+          <td>
+            {if $s.source_interval > 0}
+              每 {$s.source_interval} 分钟
+            {else}
+              手动
+            {/if}
+          </td>
+          <td>
+            {if $s.source_enabled}
+              <span class="tag tag-ok">启用</span>
+            {else}
+              <span class="tag">停用</span>
+            {/if}
+          </td>
+          <td>{if $s.last_run_at}{:formatDateTime($s.last_run_at)}{else}-{/if}</td>
+          <td>{if $s.next_run_at}{:formatDateTime($s.next_run_at)}{else}-{/if}</td>
+          <td>
+            {if $s.last_status == 'ok'}
+              <span class="tag tag-ok">成功</span>
+            {else}
+              {if $s.last_status == 'error'}
+                <span class="tag tag-error">失败</span>
+              {else}
+                -
+              {/if}
+            {/if}
+          </td>
+          <td class="actions">
+            <a href="/admin/sources/edit?id={$s.source_id}">编辑</a>
+            <a href="/admin/sources/logs?id={$s.source_id}">日志</a>
+            <form action="/admin/sources/run" method="post">
+              <input type="hidden" name="_csrf" value="{$csrf}">
+              <input type="hidden" name="source_id" value="{$s.source_id}">
+              <button class="link-btn" type="submit">运行</button>
+            </form>
+            <form action="/admin/sources/toggle" method="post">
+              <input type="hidden" name="_csrf" value="{$csrf}">
+              <input type="hidden" name="source_id" value="{$s.source_id}">
+              <button class="link-btn" type="submit">{if $s.source_enabled}停用{else}启用{/if}</button>
+            </form>
+            <form action="/admin/sources/delete" method="post" onsubmit="return confirm('确定删除这个采集源吗？')">
+              <input type="hidden" name="_csrf" value="{$csrf}">
+              <input type="hidden" name="source_id" value="{$s.source_id}">
+              <button class="link-danger" type="submit">删除</button>
+            </form>
+          </td>
+        </tr>
+      {/foreach}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>最近采集日志</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>时间</th>
+        <th>采集源</th>
+        <th>状态</th>
+        <th>消息</th>
+      </tr>
+    </thead>
+    <tbody>
+      {foreach $recentLogs as $log}
+        <tr>
+          <td>{:formatDateTime($log.created_at)}</td>
+          <td>{$log.source_name}</td>
+          <td>
+            {if $log.status == 'ok'}
+              <span class="tag tag-ok">成功</span>
+            {else}
+              <span class="tag tag-error">失败</span>
+            {/if}
+          </td>
+          <td>{$log.message}</td>
+        </tr>
+      {/foreach}
+    </tbody>
+  </table>
+</div>
+
+{include file="admin/partials/footer"}

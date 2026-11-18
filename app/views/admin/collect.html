@@ -9,8 +9,12 @@
 
 <div class="panel">
   <p class="muted">
-    填写资源站 API（返回 JSON），系统会拉取影片、按分类映射后入库。
-    本站自带一个离线测试接口，默认已填好。
+    填写资源站 API（支持 JSON 和 XML），系统会拉取影片、按分类映射后入库。
+    不确定格式就选“自动识别”。本站自带离线测试接口：
+  </p>
+  <p class="muted">
+    JSON：<code>{$sampleJson}</code><br>
+    XML：<code>{$sampleXml}</code>
   </p>
 
   <form class="form-grid" action="/admin/collect" method="post">
@@ -19,13 +23,58 @@
     <label class="span-2">
       资源站 API 地址
       <input type="text" name="api_url" value="{$defaultUrl}" required>
-      <small class="hint">例如：https://资源站/api.php/provide/vod/?ac=list</small>
+      <small class="hint">
+        例如：https://api.ffzyapi.com/api.php/provide/vod/at/xml/
+        —— 系统会自动补上 ac=videolist，否则接口只返回基本信息、没有播放地址。
+      </small>
+    </label>
+
+    <label>
+      接口格式
+      <select name="format">
+        <option value="auto" {if $format == 'auto'}selected{/if}>自动识别</option>
+        <option value="json" {if $format == 'json'}selected{/if}>JSON</option>
+        <option value="xml" {if $format == 'xml'}selected{/if}>XML</option>
+      </select>
+      <small class="hint">根据响应头/开头字符判断；不确定就选自动。</small>
+    </label>
+
+    <label>
+      资源站分类ID（可空）
+      <input type="text" name="type_id" value="{$typeId}" placeholder="例如 30 = 日韩动漫">
+      <small class="hint">会作为 t 参数。ffzy 的日韩动漫是 30。</small>
+    </label>
+
+    <label>
+      地区（可空）
+      <input type="text" name="area" value="{$area}" placeholder="日本">
+      <small class="hint">会作为 area 参数。ffzy 支持 area=日本，用来只要日漫。</small>
+    </label>
+
+    <label>
+      起始页
+      <input type="number" min="1" name="start_page" value="{$startPage}">
+      <small class="hint">每页 20 条；从第几页开始。</small>
+    </label>
+
+    <label>
+      采集页数
+      <input type="number" min="1" max="50" name="pages" value="{$pages}">
+      <small class="hint">一次最多 50 页；越多越慢。</small>
+    </label>
+
+    <label class="span-2">
+      关键词（可空）
+      <input type="text" name="keyword" value="{$keyword}" placeholder="只采集包含关键词的影片">
     </label>
 
     <label class="span-2">
       分类映射（资源站分类ID=本站分类ID）
       <textarea name="mapping" rows="4">{$mapping}</textarea>
-      <small class="hint">每行一条，例如 1=1 表示资源站分类 1 导入到本站分类 1。留空则尝试按分类名自动匹配。</small>
+      <small class="hint">
+        每行一条，例如 30=3；留空则按分类名自动匹配。
+        从 ffzy 只采日漫时建议：分类ID=30、地区=日本、映射 30=本站动漫分类ID。
+      </small>
     </label>
 
     <div class="form-actions span-2">
@@ -38,11 +87,19 @@
   <div class="panel">
     <h2>采集结果</h2>
     <div class="stat-grid">
-      <div class="stat"><strong>{$stats.total}</strong><span>资源总数</span></div>
+      <div class="stat"><strong>{$stats.total}</strong><span>本次采集</span></div>
+      <div class="stat"><strong>{$stats.pagesFetched}</strong><span>采集页数</span></div>
       <div class="stat"><strong>{$stats.inserted}</strong><span>新增</span></div>
       <div class="stat"><strong>{$stats.updated}</strong><span>更新</span></div>
       <div class="stat"><strong>{$stats.skipped}</strong><span>跳过</span></div>
+      {if $stats.noPlay}
+        <div class="stat"><strong>{$stats.noPlay}</strong><span>无播放地址</span></div>
+      {/if}
     </div>
+
+    {if $stats.requestUrl}
+      <p class="muted">实际请求：<code>{$stats.requestUrl}</code></p>
+    {/if}
 
     {if $stats.messages.length}
       <ul class="message-list">

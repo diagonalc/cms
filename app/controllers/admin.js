@@ -1,4 +1,5 @@
 const { Type, Vod, Admin, Collect } = require('../models');
+const sources = require('../sources');
 const { toInt, pageNumbers, pageUrl } = require('../helpers');
 const { render } = require('../view');
 const { isAdmin, loginSession, logoutSession, verifyCsrf } = require('../session');
@@ -194,12 +195,28 @@ function vodDelete(ctx) {
 
 function collectPage(ctx, extra = {}) {
   const origin = `http://${ctx.req.headers.host || 'localhost:3000'}`;
+
+  // 根据当前测试接口自动选中格式，方便切换 JSON / XML 演示
+  const sampleJson = `${origin}/mock/resource`;
+  const sampleXml = `${origin}/mock/resource.xml`;
+  const defaultUrl = extra.defaultUrl || sampleJson;
+  const defaultFormat = extra.format ||
+    (/\.xml(\?|$)/i.test(defaultUrl) ? 'xml' : 'auto');
+
   sendHtml(ctx.res, render('admin/collect', {
     ...adminData(ctx),
-    defaultUrl: `${origin}/mock/resource`,
+    sampleJson,
+    sampleXml,
     mapping: '1=1\n2=2\n3=3',
     stats: null,
+    startPage: 1,
+    pages: 1,
+    typeId: '',
+    area: '',
+    keyword: '',
     ...extra,
+    defaultUrl,
+    format: defaultFormat,
   }));
 }
 
@@ -211,23 +228,242 @@ function collectForm(ctx) {
 async function collectSubmit(ctx) {
   if (!guard(ctx) || !csrfOk(ctx)) return;
 
+  const options = {
+    startPage: ctx.body.start_page,
+    pages: ctx.body.pages,
+    typeId: ctx.body.type_id,
+    area: ctx.body.area,
+    keyword: ctx.body.keyword,
+  };
+
+  const preserve = {
+    mapping: ctx.body.mapping,
+    defaultUrl: ctx.body.api_url,
+    format: ctx.body.format,
+    startPage: ctx.body.start_page,
+    pages: ctx.body.pages,
+    typeId: ctx.body.type_id,
+    area: ctx.body.area,
+    keyword: ctx.body.keyword,
+  };
+
   try {
-    const stats = await Collect.importFrom(ctx.body.api_url, ctx.body.mapping);
-    collectPage(ctx, {
-      stats,
-      err: '',
-      msg: '采集完成',
-      mapping: ctx.body.mapping,
-      defaultUrl: ctx.body.api_url,
-    });
+    const stats = await Collect.importFrom(
+      ctx.body.api_url,
+      ctx.body.mapping,
+      ctx.body.format,
+      options
+    );
+    collectPage(ctx, { ...preserve, stats, err: '', msg: '采集完成' });
   } catch (err) {
-    collectPage(ctx, {
-      stats: null,
-      err: err.message,
-      mapping: ctx.body.mapping,
-      defaultUrl: ctx.body.api_url,
-    });
+    collectPage(ctx, { ...preserve, stats: null, err: err.message });
   }
+}
+
+/* ---------------- 采集源管理 ---------------- */
+
+function exampleSourceConfig(type, origin) {
+  if (type === 'xml') {
+    return JSON.stringify({
+      keyword: '测试',
+      typeId: 3,
+      pages: 1,
+      search: {
+        url: `${origin}/mock/rules/xml/search?wd=@keyword`,
+        list: '//video',
+        name: './name/text()',
+        source: './id/text()',
+      },
+      fields: {
+        vod_name: './name/text()',
+        vod_pic: './pic/text()',
+        vod_actor: './actor/text()',
+        vod_year: './year/text()',
+        vod_area: './area/text()',
+        vod_remarks: './note/text()',
+        vod_content: './des/text()',
+      },
+      play: {
+        groups: './dl/dd',
+        from: './@flag',
+        url: './text()',
+      },
+    }, null, 2);
+  }
+
+  if (type === 'xpath') {
+    return JSON.stringify({
+      keyword: '测试',
+      typeId: 3,
+      pages: 1,
+      search: {
+        url: `${origin}/mock/rules/html/search?wd=@keyword`,
+        list: '//div[contains(@class,"item")]',
+        name: './/h3/text()',
+        source: './a/@href',
+      },
+      detail: {
+        url: `${origin}@sourceRaw`,
+      },
+      fields: {
+        vod_name: '//h1/text()',
+        vod_pic: '//img[@class="cover"]/@src',
+        vod_actor: '//span[@class="actor"]/text()',
+        vod_content: '//div[@class="desc"]//text()',
+      },
+      play: {
+        groups: '//div[@class="line"]',
+        from: './@data-from',
+        episodes: './/a',
+        episodeName: './text()',
+        episodeUrl: './@href',
+      },
+    }, null, 2);
+  }
+
+  return JSON.stringify({
+    keyword: '测试',
+    typeId: 3,
+    pages: 1,
+    search: {
+      url: `${origin}/mock/rules/json/search?wd=@keyword`,
+      list: '$.info.rows[*]',
+      name: '$.vod_name',
+      source: '$.vod_id',
+    },
+    detail: {
+      url: `${origin}/mock/rules/json/detail?id=@source`,
+    },
+    fields: {
+      vod_name: '$.info.vod_name',
+      vod_pic: '$.info.vod_pic',
+      vod_actor: '$.info.vod_actor',
+      vod_director: '$.info.vod_director',
+      vod_year: '$.info.vod_year',
+      vod_area: '$.info.vod_area',
+      vod_lang: '$.info.vod_lang',
+      vod_remarks: '$.info.vod_remarks',
+      vod_content: '$.info.vod_content',
+      vod_score: '$.info.vod_score',
+    },
+    play: {
+      from: '$.info.vod_play_from',
+      url: '$.info.vod_play_url',
+    },
+  }, null, 2);
+}
+
+function sourceList(ctx) {
+  if (!guard(ctx)) return;
+  sendHtml(ctx.res, render('admin/sources', {
+    ...adminData(ctx),
+    list: sources.listSources(),
+    recentLogs: sources.listLogs(0, 10),
+  }));
+}
+
+function sourceEdit(ctx) {
+  if (!guard(ctx)) return;
+
+  const id = toInt(ctx.query.id);
+  const source = id ? sources.getSource(id) : null;
+  const allowed = ['json', 'xml', 'xpath'];
+  const type = source
+    ? source.source_type
+    : (allowed.includes(ctx.query.type) ? ctx.query.type : 'json');
+  const origin = `http://${ctx.req.headers.host || 'localhost:3000'}`;
+
+  const form = source ? { ...source } : {
+    source_id: 0,
+    source_name: '',
+    source_type: type,
+    source_interval: 0,
+    source_enabled: 0,
+    source_config: exampleSourceConfig(type, origin),
+  };
+
+  sendHtml(ctx.res, render('admin/source_edit', {
+    ...adminData(ctx),
+    form,
+    types: Type.all(),
+    sourceTypes: allowed,
+  }));
+}
+
+function sourceSave(ctx) {
+  if (!guard(ctx) || !csrfOk(ctx)) return;
+
+  const form = {
+    source_id: ctx.body.source_id,
+    source_name: ctx.body.source_name,
+    source_type: ctx.body.source_type,
+    source_interval: ctx.body.source_interval,
+    source_enabled: ctx.body.source_enabled === '1' ? 1 : 0,
+    source_config: ctx.body.source_config,
+  };
+
+  try {
+    sources.saveSource(form);
+    redirect(ctx.res, '/admin/sources?msg=' + encodeURIComponent('采集源已保存'));
+  } catch (err) {
+    sendHtml(ctx.res, render('admin/source_edit', {
+      ...adminData(ctx),
+      form,
+      types: Type.all(),
+      sourceTypes: ['json', 'xml', 'xpath'],
+      err: err.message,
+    }), 400);
+  }
+}
+
+function sourceDelete(ctx) {
+  if (!guard(ctx) || !csrfOk(ctx)) return;
+  try {
+    sources.deleteSource(ctx.body.source_id);
+    redirect(ctx.res, '/admin/sources?msg=' + encodeURIComponent('采集源已删除'));
+  } catch (err) {
+    redirect(ctx.res, '/admin/sources?err=' + encodeURIComponent(err.message));
+  }
+}
+
+function sourceToggle(ctx) {
+  if (!guard(ctx) || !csrfOk(ctx)) return;
+
+  const source = sources.getSource(ctx.body.source_id);
+  if (!source) return redirect(ctx.res, '/admin/sources?err=' + encodeURIComponent('采集源不存在'));
+
+  try {
+    sources.saveSource({
+      ...source,
+      source_enabled: source.source_enabled ? 0 : 1,
+      source_config: source.source_config,
+    });
+    redirect(ctx.res, '/admin/sources?msg=' + encodeURIComponent('状态已切换'));
+  } catch (err) {
+    redirect(ctx.res, '/admin/sources?err=' + encodeURIComponent(err.message));
+  }
+}
+
+async function sourceRun(ctx) {
+  if (!guard(ctx) || !csrfOk(ctx)) return;
+
+  try {
+    const res = await sources.runSource(ctx.body.source_id, { manual: true });
+    const msg = res ? res.summary : '运行完成';
+    redirect(ctx.res, '/admin/sources?msg=' + encodeURIComponent(msg));
+  } catch (err) {
+    redirect(ctx.res, '/admin/sources?err=' + encodeURIComponent(err.message));
+  }
+}
+
+function sourceLogs(ctx) {
+  if (!guard(ctx)) return;
+  const id = toInt(ctx.query.id);
+  sendHtml(ctx.res, render('admin/source_logs', {
+    ...adminData(ctx),
+    source: id ? sources.getSource(id) : null,
+    logs: sources.listLogs(id, 100),
+  }));
 }
 
 module.exports = {
@@ -244,5 +480,12 @@ module.exports = {
   vodDelete,
   collectForm,
   collectSubmit,
+  sourceList,
+  sourceEdit,
+  sourceSave,
+  sourceDelete,
+  sourceToggle,
+  sourceRun,
+  sourceLogs,
   redirect,
 };

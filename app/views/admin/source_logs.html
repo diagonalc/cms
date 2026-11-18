@@ -1,0 +1,47 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">COLLECT LOGS</p>
+    <h1>{if $source}{$source.source_name} · 采集日志{else}全部采集日志{/if}</h1>
+  </div>
+  <a class="btn" href="/admin/sources">← 返回采集源</a>
+</div>
+
+<div class="panel">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>时间</th>
+        <th>采集源</th>
+        <th>状态</th>
+        <th>消息</th>
+        <th>详情</th>
+      </tr>
+    </thead>
+    <tbody>
+      {foreach $logs as $log}
+        <tr>
+          <td>{:formatDateTime($log.created_at)}</td>
+          <td>{$log.source_name}</td>
+          <td>
+            {if $log.status == 'ok'}
+              <span class="tag tag-ok">成功</span>
+            {else}
+              <span class="tag tag-error">失败</span>
+            {/if}
+          </td>
+          <td>{$log.message}</td>
+          <td>
+            <details>
+              <summary>stats</summary>
+              <pre class="log-stats">{$log.stats}</pre>
+            </details>
+          </td>
+        </tr>
+      {/foreach}
+    </tbody>
+  </table>
+</div>
+
+{include file="admin/partials/footer"}

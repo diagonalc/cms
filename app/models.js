@@ -1,5 +1,5 @@
 const { db } = require('./db');
-const { parsePlayList, slugify, toInt, clamp } = require('./helpers');
+const { parsePlayList, slugify, toInt, clamp, isDirectPlayUrl } = require('./helpers');
 const { verifyPassword } = require('./security');
 
 /* =========================================================
@@ -229,6 +229,14 @@ const Vod = (() => {
     if (!row) return null;
     const vod = { ...row };
     vod.play_list = parsePlayList(vod.vod_play_from, vod.vod_play_url);
+
+    // 资源站常同时给“分享页”和“直链 m3u8”两条线路。
+    // 优先把直链线路排在前面，避免用户点到需要解析的分享页。
+    for (const line of vod.play_list) {
+      line.direct = line.urls.some((ep) => isDirectPlayUrl(ep.url)) ? 1 : 0;
+    }
+    vod.play_list.sort((a, b) => b.direct - a.direct);
+
     return vod;
   }
 
@@ -417,80 +425,395 @@ const Collect = (() => {
     return { vod_play_from: froms.join('$$$'), vod_play_url: urls.join('$$$') };
   }
 
-  async function fetchResource(url) {
+  /**
+   * 统一从两种接口字段里取播放地址：
+   * - 本站旧 mock / 部分接口：{ dl: { m3u8: '第1集$url#...' } }
+   * - 苹果CMS JSON 接口：{ vod_play_from: 'feifan$$$ffm3u8', vod_play_url: '第1集$url#...$$$...' }
+   */
+  function playStringsFromItem(item) {
+    if (item && item.dl && (Array.isArray(item.dl) ? item.dl.length : Object.keys(item.dl).length)) {
+      return playStringsFromDl(item.dl);
+    }
+
+    let from = item ? (item.vod_play_from ?? item.play_from ?? '') : '';
+    let url = item ? (item.vod_play_url ?? item.play_url ?? '') : '';
+    if (Array.isArray(from)) from = from.join('$$$');
+    if (Array.isArray(url)) url = url.join('$$$');
+
+    return {
+      vod_play_from: String(from || ''),
+      vod_play_url: String(url || ''),
+    };
+  }
+
+  /**
+   * 规范化资源站地址：
+   * - 采集必须拿完整数据，所以把 ac=list / 缺少 ac 统一改成 ac=videolist；
+   * - 自动带上 pg（页码）、t（分类ID）、area（地区）、wd（关键词）。
+   */
+  function normalizeResourceUrl(rawUrl, options = {}) {
+    let u;
+    try {
+      u = new URL(String(rawUrl || ''));
+    } catch {
+      throw new Error('采集地址格式不正确');
+    }
+    if (!/^https?:$/i.test(u.protocol)) {
+      throw new Error('采集地址必须以 http:// 或 https:// 开头');
+    }
+
+    const ac = u.searchParams.get('ac');
+    if (ac !== 'videolist') u.searchParams.set('ac', 'videolist');
+
+    const page = toInt(options.page, 0);
+    if (page > 0) u.searchParams.set('pg', String(page));
+
+    if (options.typeId !== undefined && options.typeId !== null && String(options.typeId).trim() !== '') {
+      u.searchParams.set('t', String(toInt(options.typeId)));
+    }
+    if (options.area !== undefined && options.area !== null && String(options.area).trim() !== '') {
+      u.searchParams.set('area', String(options.area).trim());
+    }
+    if (options.keyword !== undefined && options.keyword !== null && String(options.keyword).trim() !== '') {
+      u.searchParams.set('wd', String(options.keyword).trim());
+    }
+
+    return u.toString();
+  }
+
+  /* ---------- XML 解析：兼容苹果CMS资源站的 rss/list/video 格式 ---------- */
+
+  function decodeXmlEntities(text) {
+    const named = {
+      amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+    };
+    return String(text || '').replace(
+      /&(?:#x([0-9a-f]+)|#(\d+)|([a-z][a-z0-9]+));/gi,
+      (match, hex, dec, name) => {
+        if (hex) return String.fromCodePoint(Number.parseInt(hex, 16));
+        if (dec) return String.fromCodePoint(Number.parseInt(dec, 10));
+        const val = named[String(name).toLowerCase()];
+        return val === undefined ? match : val;
+      }
+    );
+  }
+
+  /** 取标签内容：优先 CDATA，其次去标签 + 实体解码。 */
+  function decodeXmlText(raw) {
+    let s = String(raw || '').trim();
+    const cdata = [...s.matchAll(/<!\[CDATA\[([\s\S]*?)\]\]>/g)].map((m) => m[1]);
+    if (cdata.length) {
+      s = cdata.join('');
+    } else {
+      s = s.replace(/<[^>]*>/g, '');
+    }
+    return decodeXmlEntities(s).trim();
+  }
+
+  function tagText(block, tag) {
+    const re = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i');
+    const m = re.exec(block);
+    return m ? decodeXmlText(m[1]) : '';
+  }
+
+  function parseXmlAttrs(text) {
+    const attrs = {};
+    const re = /([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+    let m;
+    while ((m = re.exec(String(text || '')))) {
+      attrs[m[1]] = decodeXmlEntities(m[2] ?? m[3] ?? '');
+    }
+    return attrs;
+  }
+
+  /**
+   * 把资源站 XML 归一化成和 JSON 接口一样的结构：
+   * { page, pagecount, total, class: [{type_id,type_name}], list: [{..., dl:{from:url}}] }
+   *
+   * 兼容结构：
+   * <rss><list page="1" ...>
+   *   <class><ty id="1">电影</ty></class>
+   *   <video><id>1</id><tid>1</tid><name><![CDATA[片名]]></name>
+   *     <dl><dd flag="m3u8"><![CDATA[第1集$url#第2集$url]]></dd></dl>
+   *   </video>
+   * </list></rss>
+   */
+  function parseXmlResource(text) {
+    const xml = String(text || '').replace(/^﻿/, '');
+    if (!/<(rss|list|video|item)\b/i.test(xml)) {
+      throw new Error('资源站返回的不是有效的 XML');
+    }
+
+    const listOpen = /<list\b([^>]*)>/i.exec(xml);
+    const listAttrs = listOpen ? parseXmlAttrs(listOpen[1]) : {};
+
+    const classes = [];
+    const classBlock = /<class\b[^>]*>([\s\S]*?)<\/class>/i.exec(xml);
+    if (classBlock) {
+      const tyRe = /<ty\b([^>]*)>([\s\S]*?)<\/ty>/gi;
+      let m;
+      while ((m = tyRe.exec(classBlock[1]))) {
+        const attrs = parseXmlAttrs(m[1]);
+        const id = toInt(attrs.id);
+        const name = decodeXmlText(m[2]);
+        if (id && name) classes.push({ type_id: id, type_name: name });
+      }
+    }
+
+    const list = [];
+    const typeNames = new Map();
+    const videoRe = /<(video|item)\b([^>]*)>([\s\S]*?)<\/\1>/gi;
+    let m;
+    while ((m = videoRe.exec(xml))) {
+      const openAttrs = parseXmlAttrs(m[2]);
+      const block = m[3];
+      const name = tagText(block, 'name') || tagText(block, 'title');
+      if (!name) continue;
+
+      const typeId = toInt(
+        tagText(block, 'tid') ||
+        tagText(block, 'type_id') ||
+        openAttrs.tid ||
+        openAttrs.type_id
+      );
+      const typeName = tagText(block, 'type');
+      if (typeId && typeName) typeNames.set(typeId, typeName);
+
+      const dl = {};
+      const dlBlock = /<dl\b[^>]*>([\s\S]*?)<\/dl>/i.exec(block);
+      if (dlBlock) {
+        const ddRe = /<dd\b([^>]*)>([\s\S]*?)<\/dd>/gi;
+        let d;
+        while ((d = ddRe.exec(dlBlock[1]))) {
+          const attrs = parseXmlAttrs(d[1]);
+          const from = String(attrs.flag || attrs.from || 'line');
+          const url = decodeXmlText(d[2]);
+          if (url) dl[from] = url;
+        }
+      }
+
+      list.push({
+        type_id: typeId,
+        type_name: typeName,
+        vod_id: toInt(tagText(block, 'id')),
+        vod_name: name,
+        vod_pic: tagText(block, 'pic'),
+        vod_actor: tagText(block, 'actor'),
+        vod_director: tagText(block, 'director'),
+        vod_year: tagText(block, 'year'),
+        vod_area: tagText(block, 'area'),
+        vod_lang: tagText(block, 'lang'),
+        vod_remarks: tagText(block, 'note'),
+        vod_content: tagText(block, 'des') || tagText(block, 'content'),
+        vod_score: Number(tagText(block, 'score') || 0) || 0,
+        dl,
+      });
+    }
+
+    // 很多 XML 接口没有 <class> 节点，但每部影片带 <tid>/<type>。
+    // 用它们反推出分类表，这样“按分类名自动匹配”也能工作。
+    if (!classes.length && typeNames.size) {
+      for (const [id, name] of typeNames) {
+        classes.push({ type_id: id, type_name: name });
+      }
+    }
+
+    return {
+      code: 1,
+      msg: 'xml',
+      page: toInt(listAttrs.page, 1),
+      pagecount: toInt(listAttrs.pagecount, 1),
+      limit: toInt(listAttrs.pagesize, list.length || 20),
+      total: toInt(listAttrs.recordcount, list.length),
+      class: classes,
+      list,
+    };
+  }
+
+  async function fetchResource(url, format = 'auto') {
     if (!/^https?:\/\//i.test(String(url || ''))) {
       throw new Error('采集地址必须以 http:// 或 https:// 开头');
     }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15_000);
     try {
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error(`资源站返回 HTTP ${res.status}`);
-      const text = await res.text();
-      let json;
+
+      const text = (await res.text()).replace(/^﻿/, '');
+      const contentType = String(res.headers.get('content-type') || '').toLowerCase();
+      const actual = String(format || 'auto').toLowerCase();
+
+      const parseJson = () => {
+        let json;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          throw new Error('资源站返回的不是 JSON');
+        }
+        if (!json || !Array.isArray(json.list)) throw new Error('资源站 JSON 缺少 list 数组');
+        return json;
+      };
+
+      if (actual === 'xml') return parseXmlResource(text);
+      if (actual === 'json') return parseJson();
+
+      // auto：优先看 Content-Type / 开头字符，再回退尝试
+      const trimmed = text.trim();
+      const looksXml = contentType.includes('xml') ||
+        /^<\?xml/i.test(trimmed) ||
+        /^<rss\b/i.test(trimmed) ||
+        /^<list\b/i.test(trimmed);
+
+      if (looksXml) return parseXmlResource(text);
+
       try {
-        json = JSON.parse(text);
-      } catch {
-        throw new Error('资源站返回的不是 JSON');
+        return parseJson();
+      } catch (jsonErr) {
+        try {
+          return parseXmlResource(text);
+        } catch {
+          throw jsonErr;
+        }
       }
-      if (!json || !Array.isArray(json.list)) throw new Error('资源站 JSON 缺少 list 数组');
-      return json;
     } finally {
       clearTimeout(timer);
     }
   }
 
-  async function importFrom(url, mappingText) {
-    const json = await fetchResource(url);
+  async function importFrom(url, mappingText, format = 'auto', options = {}) {
+    const startPage = Math.max(1, toInt(options.startPage, 1));
+    const pages = clamp(toInt(options.pages, 1), 1, 50);
     const mapping = parseMapping(mappingText);
 
-    // 如果没填手工映射，就尝试按 class 列表里的分类名自动匹配本站分类
-    const remoteClasses = Array.isArray(json.class) ? json.class : [];
     const localTypes = Type.all();
     const nameToLocal = new Map(localTypes.map((t) => [t.type_name, t.type_id]));
 
-    const stats = { total: json.list.length, inserted: 0, updated: 0, skipped: 0, messages: [] };
+    // 先精确匹配分类名；匹配不到再做一次包含匹配（如“日韩动漫” -> “动漫”）
+    const findLocalByName = (name) => {
+      if (!name) return 0;
+      const exact = nameToLocal.get(name);
+      if (exact) return exact;
+      const fuzzy = localTypes.find(
+        (t) => name.includes(t.type_name) || t.type_name.includes(name)
+      );
+      return fuzzy ? fuzzy.type_id : 0;
+    };
 
-    for (const item of json.list) {
-      const remoteType = toInt(item.type_id);
-      let localType = mapping[remoteType] || 0;
+    const stats = {
+      total: 0,
+      inserted: 0,
+      updated: 0,
+      skipped: 0,
+      noPlay: 0,
+      pagesFetched: 0,
+      resourceTotal: 0,
+      requestUrl: '',
+      messages: [],
+    };
 
-      if (!localType) {
-        const remoteClass = remoteClasses.find((c) => toInt(c.type_id) === remoteType);
-        if (remoteClass) localType = nameToLocal.get(remoteClass.type_name) || 0;
+    let remoteClasses = [];
+    let pageCount = 0;
+
+    for (let i = 0; i < pages; i++) {
+      const page = startPage + i;
+
+      let pageUrl;
+      try {
+        pageUrl = normalizeResourceUrl(url, {
+          page,
+          typeId: options.typeId,
+          area: options.area,
+          keyword: options.keyword,
+        });
+      } catch (err) {
+        stats.messages.push(err.message);
+        break;
+      }
+      stats.requestUrl = pageUrl;
+
+      let resource;
+      try {
+        resource = await fetchResource(pageUrl, format);
+      } catch (err) {
+        stats.messages.push(`第 ${page} 页采集失败：${err.message}`);
+        break;
       }
 
-      if (!localType) {
-        stats.skipped++;
-        stats.messages.push(`跳过「${item.vod_name || '未知'}」：资源站分类 ${remoteType} 未绑定`);
-        continue;
+      if (!remoteClasses.length) {
+        remoteClasses = Array.isArray(resource.class) ? resource.class : [];
+      }
+      stats.pagesFetched++;
+      stats.resourceTotal = Math.max(stats.resourceTotal, toInt(resource.total, 0));
+      stats.total += resource.list.length;
+
+      for (const item of resource.list) {
+        const remoteType = toInt(item.type_id);
+        let localType = mapping[remoteType] || 0;
+
+        if (!localType) {
+          const remoteClass = remoteClasses.find((c) => toInt(c.type_id) === remoteType);
+          if (remoteClass) localType = findLocalByName(remoteClass.type_name);
+        }
+        if (!localType && item.type_name) {
+          localType = findLocalByName(item.type_name);
+        }
+
+        if (!localType) {
+          stats.skipped++;
+          const typeLabel = item.type_name ? `${remoteType}（${item.type_name}）` : `${remoteType}`;
+          stats.messages.push(`跳过「${item.vod_name || '未知'}」：资源站分类 ${typeLabel} 未绑定`);
+          continue;
+        }
+
+        const play = playStringsFromItem(item);
+        if (!play.vod_play_url) stats.noPlay++;
+
+        const result = Vod.upsertByName({
+          type_id: localType,
+          vod_name: item.vod_name,
+          vod_pic: item.vod_pic,
+          vod_actor: item.vod_actor,
+          vod_director: item.vod_director,
+          vod_year: item.vod_year,
+          vod_area: item.vod_area,
+          vod_lang: item.vod_lang,
+          vod_remarks: item.vod_remarks,
+          vod_content: item.vod_content,
+          vod_score: item.vod_score,
+          ...play,
+        });
+
+        if (result === 'inserted') stats.inserted++;
+        else if (result === 'updated') stats.updated++;
+        else stats.skipped++;
       }
 
-      const play = playStringsFromDl(item.dl);
-      const result = Vod.upsertByName({
-        type_id: localType,
-        vod_name: item.vod_name,
-        vod_pic: item.vod_pic,
-        vod_actor: item.vod_actor,
-        vod_director: item.vod_director,
-        vod_year: item.vod_year,
-        vod_area: item.vod_area,
-        vod_lang: item.vod_lang,
-        vod_remarks: item.vod_remarks,
-        vod_content: item.vod_content,
-        vod_score: item.vod_score,
-        ...play,
-      });
+      pageCount = toInt(resource.pagecount, 0);
+      if (resource.list.length === 0 || (pageCount > 0 && page >= pageCount)) break;
+    }
 
-      if (result === 'inserted') stats.inserted++;
-      else if (result === 'updated') stats.updated++;
-      else stats.skipped++;
+    if (stats.noPlay > 0) {
+      stats.messages.push(`有 ${stats.noPlay} 条没有播放地址：如果接口用的是 ac=list，请改成 ac=videolist`);
+    }
+    if (stats.resourceTotal > stats.total) {
+      stats.messages.push(
+        `资源站共有 ${stats.resourceTotal} 条，本次采集了 ${stats.total} 条；可调整“起始页/采集页数”继续采集。`
+      );
     }
 
     return stats;
   }
 
-  return { importFrom, fetchResource, parseMapping };
+  return {
+    importFrom,
+    fetchResource,
+    parseMapping,
+    parseXmlResource,
+    playStringsFromItem,
+    normalizeResourceUrl,
+  };
 })();
 
 module.exports = { Type, Vod, Admin, Collect };

@@ -64,6 +64,33 @@ function initDb() {
       admin_role TEXT    NOT NULL DEFAULT 'admin',
       created_at INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS collect_sources (
+      source_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_name     TEXT    NOT NULL,
+      source_type     TEXT    NOT NULL DEFAULT 'json',
+      source_config   TEXT    NOT NULL DEFAULT '{}',
+      source_interval INTEGER NOT NULL DEFAULT 0,
+      source_enabled  INTEGER NOT NULL DEFAULT 1,
+      last_run_at     INTEGER NOT NULL DEFAULT 0,
+      next_run_at     INTEGER NOT NULL DEFAULT 0,
+      last_status     TEXT    NOT NULL DEFAULT '',
+      last_message    TEXT    NOT NULL DEFAULT '',
+      created_at      INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS collect_logs (
+      log_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_id   INTEGER NOT NULL DEFAULT 0,
+      source_name TEXT    NOT NULL DEFAULT '',
+      status      TEXT    NOT NULL DEFAULT '',
+      message     TEXT    NOT NULL DEFAULT '',
+      stats       TEXT    NOT NULL DEFAULT '',
+      created_at  INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_source_due ON collect_sources(source_enabled, next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_log_source ON collect_logs(source_id, log_id);
   `);
 }
 
@@ -128,12 +155,119 @@ function seed() {
 
     for (const row of rows) insertVod.run(...row);
   }
+
+  const sourceCount = db.prepare('SELECT COUNT(*) AS n FROM collect_sources').get().n;
+  if (sourceCount === 0) {
+    const origin = process.env.APP_ORIGIN || 'http://localhost:3000';
+    const now = Date.now();
+    const insertSource = db.prepare(`
+      INSERT INTO collect_sources (
+        source_name, source_type, source_config, source_interval,
+        source_enabled, last_run_at, next_run_at, last_status, last_message, created_at
+      ) VALUES (?, ?, ?, 0, 0, 0, 0, '', '', ?)
+    `);
+
+    const jsonConfig = {
+      keyword: '测试',
+      typeId: 3,
+      pages: 1,
+      search: {
+        url: `@originRaw/mock/rules/json/search?wd=@keyword`,
+        list: '$.info.rows[*]',
+        name: '$.vod_name',
+        source: '$.vod_id',
+      },
+      detail: {
+        url: `@originRaw/mock/rules/json/detail?id=@source`,
+      },
+      fields: {
+        vod_name: '$.info.vod_name',
+        vod_pic: '$.info.vod_pic',
+        vod_actor: '$.info.vod_actor',
+        vod_director: '$.info.vod_director',
+        vod_year: '$.info.vod_year',
+        vod_area: '$.info.vod_area',
+        vod_lang: '$.info.vod_lang',
+        vod_remarks: '$.info.vod_remarks',
+        vod_content: '$.info.vod_content',
+        vod_score: '$.info.vod_score',
+      },
+      play: {
+        from: '$.info.vod_play_from',
+        url: '$.info.vod_play_url',
+      },
+    };
+
+    const xmlConfig = {
+      keyword: '测试',
+      typeId: 3,
+      pages: 1,
+      search: {
+        url: `@originRaw/mock/rules/xml/search?wd=@keyword`,
+        list: '//video',
+        name: './name/text()',
+        source: './id/text()',
+      },
+      fields: {
+        vod_name: './name/text()',
+        vod_pic: './pic/text()',
+        vod_actor: './actor/text()',
+        vod_year: './year/text()',
+        vod_area: './area/text()',
+        vod_remarks: './note/text()',
+        vod_content: './des/text()',
+      },
+      play: {
+        groups: './dl/dd',
+        from: './@flag',
+        url: './text()',
+      },
+    };
+
+    const xpathConfig = {
+      keyword: '测试',
+      typeId: 3,
+      pages: 1,
+      search: {
+        url: `@originRaw/mock/rules/html/search?wd=@keyword`,
+        list: '//div[contains(@class,"item")]',
+        name: './/h3/text()',
+        source: './a/@href',
+      },
+      detail: {
+        url: `${origin}@sourceRaw`,
+      },
+      fields: {
+        vod_name: '//h1/text()',
+        vod_pic: '//img[@class="cover"]/@src',
+        vod_actor: '//span[@class="actor"]/text()',
+        vod_content: '//div[@class="desc"]//text()',
+      },
+      play: {
+        groups: '//div[@class="line"]',
+        from: './@data-from',
+        episodes: './/a',
+        episodeName: './text()',
+        episodeUrl: './@href',
+      },
+    };
+
+    insertSource.run('示例 JSON 采集源', 'json', JSON.stringify(jsonConfig, null, 2), now);
+    insertSource.run('示例 XML 采集源', 'xml', JSON.stringify(xmlConfig, null, 2), now);
+    insertSource.run('示例 XPath 采集源', 'xpath', JSON.stringify(xpathConfig, null, 2), now);
+  }
 }
 
 /** 清空业务数据（保留表结构），仅用于开发调试。 */
 function reset() {
-  db.exec('DELETE FROM vods; DELETE FROM types; DELETE FROM admins;');
-  db.exec("DELETE FROM sqlite_sequence WHERE name IN ('vods','types','admins');");
+  db.exec(`
+    DELETE FROM vods;
+    DELETE FROM types;
+    DELETE FROM admins;
+    DELETE FROM collect_sources;
+    DELETE FROM collect_logs;
+  `);
+  db.exec("DELETE FROM sqlite_sequence WHERE name IN ('vods','types','admins','collect_sources','collect_logs');");
 }
 
 initDb();
