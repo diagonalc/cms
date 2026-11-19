@@ -1,5 +1,6 @@
 const { Type, Vod, Admin, Collect } = require('../models');
 const sources = require('../sources');
+const kazumi = require('../kazumi');
 const { toInt, pageNumbers, pageUrl } = require('../helpers');
 const { render } = require('../view');
 const { isAdmin, loginSession, logoutSession, verifyCsrf } = require('../session');
@@ -466,6 +467,74 @@ function sourceLogs(ctx) {
   }));
 }
 
+/* ---------------- KazumiRules 导入 ---------------- */
+
+function renderSourceImport(ctx, extra = {}) {
+  sendHtml(ctx.res, render('admin/source_import', {
+    ...adminData(ctx),
+    indexUrl: extra.indexUrl || kazumi.DEFAULT_INDEX_URL,
+    rules: extra.rules || null,
+    types: Type.all(),
+    typeId: extra.typeId ?? 3,
+    keyword: extra.keyword || '',
+    ...extra,
+  }));
+}
+
+async function sourceImport(ctx) {
+  if (!guard(ctx)) return;
+
+  const indexUrl = String(ctx.query.index || '').trim();
+  if (!indexUrl) return renderSourceImport(ctx, { err: '' });
+
+  try {
+    const rules = await kazumi.listRules(indexUrl);
+    renderSourceImport(ctx, { indexUrl, rules });
+  } catch (err) {
+    renderSourceImport(ctx, { indexUrl, rules: null, err: err.message });
+  }
+}
+
+async function sourceImportSubmit(ctx) {
+  if (!guard(ctx) || !csrfOk(ctx)) return;
+
+  const action = String(ctx.body.action || '');
+  const indexUrl = String(ctx.body.index_url || kazumi.DEFAULT_INDEX_URL).trim();
+  const typeId = toInt(ctx.body.type_id, 3);
+  const keyword = String(ctx.body.keyword || '').trim();
+
+  if (action === 'list') {
+    try {
+      const rules = await kazumi.listRules(indexUrl);
+      return renderSourceImport(ctx, { indexUrl, rules, typeId, keyword });
+    } catch (err) {
+      return renderSourceImport(ctx, { indexUrl, rules: null, typeId, keyword, err: err.message });
+    }
+  }
+
+  if (action === 'import') {
+    try {
+      const result = await kazumi.importKazumiRule({
+        indexUrl,
+        name: String(ctx.body.name || ''),
+        typeId,
+        keyword,
+      });
+      const msg = result.warnings.length
+        ? `已导入，注意：${result.warnings.slice(0, 3).join('；')}`
+        : '已导入';
+      return redirect(
+        ctx.res,
+        `/admin/sources/edit?id=${result.sourceId}&msg=${encodeURIComponent(msg)}`
+      );
+    } catch (err) {
+      return renderSourceImport(ctx, { indexUrl, rules: null, typeId, keyword, err: err.message });
+    }
+  }
+
+  return renderSourceImport(ctx, { indexUrl, typeId, keyword, err: '未知操作' });
+}
+
 module.exports = {
   loginPage,
   loginSubmit,
@@ -487,5 +556,7 @@ module.exports = {
   sourceToggle,
   sourceRun,
   sourceLogs,
+  sourceImport,
+  sourceImportSubmit,
   redirect,
 };

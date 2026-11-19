@@ -20,6 +20,12 @@ node server.js
 - 后台：http://localhost:3000/admin
 - 默认账号：`admin` / `admin123`
 
+示例采集源使用 `@originRaw` 指向本机服务。换端口启动时同时设置：
+
+```bash
+APP_ORIGIN=http://localhost:3100 PORT=3100 node server.js
+```
+
 ## 已实现
 
 - 分类树、分类 CRUD
@@ -27,6 +33,9 @@ node server.js
 - 前台首页、分类列表、详情页、播放页、搜索、分页
 - 后台登录、session、CSRF、密码 scrypt 哈希
 - 资源采集（JSON / XML 自动识别，自动补 `ac=videolist`，支持分页、分类、地区、关键词；离线测试接口：`/mock/resource`、`/mock/resource.xml`、`/mock/resource.pages`）
+- 采集源管理：JSONPath、XML XPath、HTML XPath 三种规则
+- 定时采集任务：按分钟间隔自动运行，带运行日志
+- 从 [KazumiRules](https://github.com/Predidit/KazumiRules) 拉取规则并自动转换成本站采集源
 - 极简模板标签：`{maccms:vod}`、`{maccms:type}`、`{foreach}`、`{if}`、`{include}`
 - 播放地址 `$$$` / `#` / `$` 解析
 
@@ -38,6 +47,9 @@ node server.js
 ├─ app/
 │  ├─ db.js                   # 建表 + 演示数据
 │  ├─ models.js               # Type / Vod / Admin / Collect
+│  ├─ rules.js                # JSONPath / HTML/XML 解析 / XPath 子集
+│  ├─ sources.js              # 采集源 CRUD + 规则执行 + 定时调度
+│  ├─ kazumi.js               # KazumiRules 拉取、规则转换、导入
 │  ├─ view.js                 # 极简模板引擎
 │  ├─ helpers.js              # 转义、URL、分页、播放地址解析
 │  ├─ security.js             # scrypt 密码、随机 token
@@ -131,6 +143,144 @@ https://api.ffzyapi.com/api.php/provide/vod/at/xml/?ac=videolist&pg=1&t=30&area=
 该站 `ac=list` 只返回基本信息，没有播放地址，必须用 `ac=videolist`。
 
 > ffzy 的 `feifan` 线路是分享页，需要解析；`ffm3u8` 才是直链 m3u8。本站会自动把直链线路排在前面。
+
+## 采集源与定时任务
+
+后台 →「采集源」：
+
+- 新增/编辑 JSON、XML、XPath 三种规则；
+- 手动运行、启用/停用、删除；
+- 查看每次运行日志和统计；
+- 设置定时间隔（分钟，0 表示只手动）。
+
+规则是一个 JSON 对象：
+
+```json
+{
+  "keyword": "测试",
+  "typeId": 3,
+  "pages": 1,
+  "search": {
+    "url": "https://api.example.com/list?wd=@keyword&page=@page",
+    "list": "$.info.rows[*]",
+    "name": "$.vod_name",
+    "source": "$.vod_id"
+  },
+  "detail": {
+    "url": "https://api.example.com/detail?id=@source"
+  },
+  "fields": {
+    "vod_name": "$.info.vod_name",
+    "vod_pic": "$.info.vod_pic",
+    "vod_content": "$.info.vod_content"
+  },
+  "play": {
+    "from": "$.info.vod_play_from",
+    "url": "$.info.vod_play_url"
+  }
+}
+```
+
+- `search`：搜索/列表接口；`list` 是列表路径，`name`/`source` 是相对每个条目的路径；
+- `detail`：可选；填了就对每个条目再请求一次详情；
+- `fields`：影片字段路径；不写 `vod_name` 时用搜索结果的名称；
+- `play`：两种写法：
+  - 直接字段：`{ "from": "...", "url": "..." }`；
+  - 线路分组：`{ "groups": "...", "from": "...", "episodes": "...", "episodeName": "...", "episodeUrl": "..." }`。
+
+占位符：
+
+```text
+@keyword    关键词
+@source     搜索得到的详情 ID
+@page       页码（1 开始）
+@offset     (page - 1) * limit，适合 offset/limit 接口
+@limit      limit 值，默认 24
+@typeId     本站分类 ID
+@sourceRaw  不编码的 source（适合拼 URL 路径）
+@originRaw  APP_ORIGIN 或 http://localhost:3000（示例源用）
+```
+
+JSON 用 JSONPath：`$.info.rows[*]`、`$.vod_name`、`$['data'][0]`。
+XML / XPath 用 XPath 子集：
+
+```text
+//div  .//a  /html/body/div  ./text()
+[@class="x"]  [contains(@class,"x")]  [1]  [last()]
+@href  @src  text()
+```
+
+内置示例源：
+
+```text
+JSON:  http://localhost:3000/mock/rules/json/search
+XML:   http://localhost:3000/mock/rules/xml/search
+HTML:  http://localhost:3000/mock/rules/html/search
+```
+
+调度器：
+
+- 服务启动后每 30 秒检查一次；
+- 只运行「启用 + 间隔 > 0 + next_run_at 到期」的源；
+- 同一个源不会并发运行；
+- 运行结果写入 `collect_logs`，后台可查看。
+
+注意：
+
+- 调度器是进程内的，服务停止就不会执行；多实例部署会重复运行，生产环境应换成 cron/队列 + 分布式锁；
+- XPath 是自实现的子集，不支持 `..`、`following-sibling`、`not()`、条件过滤等；
+- 采集规则可以访问任意 http(s) 地址，生产环境必须做 SSRF 防护和限流。
+
+### 从 KazumiRules 导入
+
+仓库结构：
+
+```text
+index.json       规则索引
+<name>.json      单条 Kazumi 规则
+```
+
+后台 →「采集源」→「导入规则」：
+
+```text
+index.json 地址：
+https://raw.githubusercontent.com/Predidit/KazumiRules/main/index.json
+```
+
+如果 GitHub Raw 无法访问，用镜像：
+
+```text
+https://ghfast.top/https://raw.githubusercontent.com/Predidit/KazumiRules/main/index.json
+```
+
+导入流程：
+
+1. 拉取 `index.json`，显示规则列表；
+2. 选择一条规则导入；
+3. 自动转换成我们的采集源（默认停用、手动运行）；
+4. 跳转到编辑页，检查 `typeId`、`keyword`、`fields`、`play`。
+
+自动转换覆盖：
+
+- API 搜索 + API 选集（`delimited` / `nested`）；
+- API 搜索 + XPath 选集（`sourceTemplate` + `chapterRoads` / `chapterResult`）；
+- XPath 搜索 + XPath 选集。
+
+不会自动转换（会写进 `_warnings`）：
+
+- `episodePage`：只保留原始剧集地址，播放页构造被忽略；
+- `variables`：响应变量不支持；
+- `antiCrawlerConfig`：验证码/反爬需要手动处理；
+- API 规则的额外字段（封面、简介等）：导入后可在 `fields` 里补；
+- 高级 XPath / JSONPath：只支持前面列出的子集。
+
+注意：
+
+- XPath 规则依赖目标站当前 HTML，站点改版后就可能抽错字段；导入后一定要先点“运行”抽查。
+- 多条采集源按影片名 upsert，同名影片会被后运行的源覆盖。
+- 导入的源默认是「停用 + 间隔 0」，确认没问题后再启用定时。
+
+实测：18 条 KazumiRules 全部能转换；`giriGiriLove` 可完整导入并拿到直链 mp4；`TvTFun` 混合规则能导入但部分详情 404；`7sefun` 的 XPath 规则能跑，但因站点 HTML 变化抽到了错误片名，需要手动调整。
 
 ## 注意
 

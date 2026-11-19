@@ -83,4 +83,10 @@ assert.ok(url.includes('%E8%8A%99%E8%8E%89%E8%8E%B2'));
 assert.ok(url.includes('id=26879'));
 assert.ok(url.includes('page=2'));
 
+const rawUrl = R.buildUrl('@originRaw@sourceRaw', {
+  origin: 'http://localhost:3100',
+  source: '/detail/1',
+});
+assert.equal(rawUrl, 'http://localhost:3100/detail/1');
+
 console.log('rules tests passed');

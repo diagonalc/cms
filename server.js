@@ -113,6 +113,8 @@ const routes = [
   ['POST', /^\/admin\/sources\/toggle$/, [], admin.sourceToggle],
   ['POST', /^\/admin\/sources\/run$/, [], admin.sourceRun],
   ['GET', /^\/admin\/sources\/logs$/, [], admin.sourceLogs],
+  ['GET', /^\/admin\/sources\/import$/, [], admin.sourceImport],
+  ['POST', /^\/admin\/sources\/import$/, [], admin.sourceImportSubmit],
 ];
 
 const server = http.createServer(async (req, res) => {

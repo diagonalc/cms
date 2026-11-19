@@ -158,7 +158,6 @@ function seed() {
 
   const sourceCount = db.prepare('SELECT COUNT(*) AS n FROM collect_sources').get().n;
   if (sourceCount === 0) {
-    const origin = process.env.APP_ORIGIN || 'http://localhost:3000';
     const now = Date.now();
     const insertSource = db.prepare(`
       INSERT INTO collect_sources (
@@ -235,7 +234,7 @@ function seed() {
         source: './a/@href',
       },
       detail: {
-        url: `${origin}@sourceRaw`,
+        url: '@originRaw@sourceRaw',
       },
       fields: {
         vod_name: '//h1/text()',

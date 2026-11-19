@@ -1,0 +1,99 @@
+{include file="admin/partials/header"}
+
+<div class="page-head">
+  <div>
+    <p class="eyebrow">KAZUMI RULES</p>
+    <h1>从 KazumiRules 导入规则</h1>
+  </div>
+  <a class="btn" href="/admin/sources">← 返回采集源</a>
+</div>
+
+<div class="panel">
+  <p class="muted">
+    从 <code>index.json</code> 拉取规则列表，再把单条 Kazumi 规则转换成本站的采集源。
+    导入后默认是「停用 + 手动」，请先检查 typeId、keyword、play 配置。
+  </p>
+  <p class="muted">
+    如果 GitHub Raw 访问不了，可以把地址换成镜像，例如：<br>
+    <code>https://ghfast.top/https://raw.githubusercontent.com/Predidit/KazumiRules/main/index.json</code>
+  </p>
+
+  <form class="form-grid" action="/admin/sources/import" method="post">
+    <input type="hidden" name="_csrf" value="{$csrf}">
+    <input type="hidden" name="action" value="list">
+
+    <label class="span-2">
+      index.json 地址
+      <input type="text" name="index_url" value="{$indexUrl}" required>
+    </label>
+
+    <label>
+      导入到本站分类
+      <select name="type_id">
+        {foreach $types as $t}
+          <option value="{$t.type_id}" {if $t.type_id == $typeId}selected{/if}>{$t.type_id} - {$t.type_name}</option>
+        {/foreach}
+      </select>
+    </label>
+
+    <label>
+      默认关键词（可空）
+      <input type="text" name="keyword" value="{$keyword}" placeholder="导入后也可以在规则里改">
+    </label>
+
+    <div class="form-actions span-2">
+      <button class="btn btn-primary" type="submit">拉取规则列表</button>
+    </div>
+  </form>
+</div>
+
+{if $rules}
+  <div class="panel">
+    <h2>规则列表（{$rules.length} 条）</h2>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>名称</th>
+          <th>版本</th>
+          <th>作者</th>
+          <th>更新</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {foreach $rules as $r}
+          <tr>
+            <td><strong>{$r.name}</strong></td>
+            <td>{$r.version}</td>
+            <td>{if $r.author}{$r.author}{else}-{/if}</td>
+            <td>{if $r.lastUpdate}{:formatDate($r.lastUpdate)}{else}-{/if}</td>
+            <td class="actions">
+              <form action="/admin/sources/import" method="post">
+                <input type="hidden" name="_csrf" value="{$csrf}">
+                <input type="hidden" name="action" value="import">
+                <input type="hidden" name="index_url" value="{$indexUrl}">
+                <input type="hidden" name="name" value="{$r.name}">
+                <input type="hidden" name="type_id" value="{$typeId}">
+                <input type="hidden" name="keyword" value="{$keyword}">
+                <button class="btn btn-primary" type="submit">导入</button>
+              </form>
+            </td>
+          </tr>
+        {/foreach}
+      </tbody>
+    </table>
+  </div>
+{/if}
+
+<div class="panel">
+  <h2>转换说明</h2>
+  <ul class="tips">
+    <li>API 搜索 + API 选集：自动转换 searchApiConfig / chapterApiConfig。</li>
+    <li>API 搜索 + XPath 选集：自动使用 sourceTemplate + chapterRoads/chapterResult。</li>
+    <li>XPath 搜索 + XPath 选集：自动转换 searchURL/searchList/chapterRoads。</li>
+    <li>episodePage、variables、antiCrawlerConfig 不会自动转换，会写进规则的 <code>_warnings</code>。</li>
+    <li>API 规则不会自动映射 vod_pic/vod_content 等字段，导入后可在 fields 里补。</li>
+  </ul>
+</div>
+
+{include file="admin/partials/footer"}

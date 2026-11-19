@@ -8,6 +8,8 @@ const {
   extractText,
   extractValues,
   extractList,
+  resolveUrl,
+  resolvePlayUrls,
 } = require('./rules');
 const { toInt, clamp } = require('./helpers');
 
@@ -120,8 +122,8 @@ function buildPlay(type, doc, play) {
     const froms = [];
     const urls = [];
 
-    for (const group of groups) {
-      const from = extractValue(type, group, play.from, group) || 'line';
+    for (const [groupIndex, group] of groups.entries()) {
+      const from = extractValue(type, group, play.from, group) || `线路${groupIndex + 1}`;
 
       if (play.episodes) {
         // 每组下面还有多集：<div class="line"><a>第1集</a>...</div>
@@ -199,11 +201,17 @@ async function runSource(id, options = {}) {
     if (!typeId || !Type.find(typeId)) throw new Error('规则的 typeId 不是有效分类');
 
     const keyword = String(cfg.keyword || '').trim();
-    const hasPage = String(cfg.search.url).includes('@page');
+    const hasPage = String(cfg.search.url).includes('@page') ||
+      String(cfg.search.url).includes('@offset');
     const pages = hasPage ? clamp(toInt(cfg.pages, 1), 1, 50) : 1;
+    const limit = clamp(toInt(cfg.limit, 24), 1, 200);
+    const origin = process.env.APP_ORIGIN || 'http://localhost:3000';
 
     for (let page = 1; page <= pages; page++) {
-      const searchUrl = buildUrl(cfg.search.url, { keyword, page, typeId });
+      const offset = (page - 1) * limit;
+      const searchUrl = buildUrl(cfg.search.url, {
+        keyword, page, offset, limit, typeId, origin,
+      });
       stats.requestUrl = searchUrl;
 
       let searchText;
@@ -241,35 +249,46 @@ async function runSource(id, options = {}) {
           }
 
           const sourceValue = extractValue(type, item, cfg.search.source, item);
+          const detailType = cfg.detail && cfg.detail.type ? cfg.detail.type : type;
           let dataDoc = item;
+          let detailUrl = searchUrl;
 
           if (cfg.detail && cfg.detail.url) {
-            const detailUrl = buildUrl(cfg.detail.url, {
+            detailUrl = buildUrl(cfg.detail.url, {
               source: sourceValue,
               keyword,
               page,
+              offset,
+              limit,
               typeId,
+              origin,
             });
+            detailUrl = resolveUrl(detailUrl, cfg.baseURL || searchUrl);
             const detailText = await fetchContent(
               detailUrl,
               cfg.detail.method || 'GET',
               cfg.detail.headers || cfg.search.headers || {},
               cfg.detail.body || ''
             );
-            dataDoc = parseDocument(type, detailText);
+            dataDoc = parseDocument(detailType, detailText);
           }
 
           const fields = {};
           for (const [field, spec] of Object.entries(cfg.fields || {})) {
             if (spec && typeof spec === 'object' && spec.path) {
-              fields[field] = extractText(type, dataDoc, spec.path, dataDoc, spec.join ?? '');
+              fields[field] = extractText(detailType, dataDoc, spec.path, dataDoc, spec.join ?? '');
             } else if (typeof spec === 'string') {
-              fields[field] = extractText(type, dataDoc, spec, dataDoc, '');
+              fields[field] = extractText(detailType, dataDoc, spec, dataDoc, '');
             }
           }
           if (!fields.vod_name) fields.vod_name = name;
 
-          const play = buildPlay(type, dataDoc, cfg.play || {});
+          const base = cfg.baseURL || detailUrl || searchUrl;
+          if (fields.vod_pic) fields.vod_pic = resolveUrl(fields.vod_pic, base);
+
+          const play = buildPlay(detailType, dataDoc, cfg.play || {});
+          play.vod_play_url = resolvePlayUrls(play.vod_play_url, base);
+
           const result = Vod.upsertByName({
             type_id: typeId,
             ...fields,

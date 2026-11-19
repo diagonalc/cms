@@ -52,7 +52,7 @@
       <textarea class="code-editor" name="source_config" rows="24" required>{$form.source_config}</textarea>
       <small class="hint">
         本站分类 ID：{foreach $types as $t}{$t.type_id}={$t.type_name}　{/foreach}<br>
-        占位符：@keyword（关键词）、@source（详情 ID）、@page（页码）、@sourceRaw（不编码的 source）。<br>
+        占位符：@keyword（关键词）、@source（详情 ID）、@page（页码）、@offset（(page-1)*limit）、@limit、@sourceRaw（不编码的 source）。<br>
         支持结构：search（url/list/name/source）+ detail（可选）+ fields + play。
       </small>
     </label>

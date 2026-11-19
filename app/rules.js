@@ -261,6 +261,32 @@ function nodeText(node) {
   return (node.children || []).map(nodeText).join('');
 }
 
+/** 把相对 URL 解析成绝对 URL；已经是 http(s)// 或 data: 等则原样返回。 */
+function resolveUrl(value, base) {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  if (/^(https?:)?\/\//i.test(v)) return v;
+  if (/^(data|javascript|mailto|tel):/i.test(v)) return v;
+  if (!base) return v;
+  try {
+    return new URL(v, base).toString();
+  } catch {
+    return v;
+  }
+}
+
+/** 对 $$$/#/$ 拼成的播放地址逐集解析相对 URL。 */
+function resolvePlayUrls(playUrl, base) {
+  return String(playUrl || '').split('$$$').map((group) =>
+    String(group).split('#').map((item) => {
+      if (!item) return item;
+      const pos = item.indexOf('$');
+      if (pos === -1) return resolveUrl(item, base);
+      return item.slice(0, pos + 1) + resolveUrl(item.slice(pos + 1), base);
+    }).join('#')
+  ).join('$$$');
+}
+
 function descendants(node, out = []) {
   for (const child of node.children || []) {
     if (child.type === 'element') {
@@ -344,6 +370,31 @@ function applyPredicate(nodes, predicate) {
   if (m) {
     const value = m[2] ?? m[3];
     return nodes.filter((n) => String((n.attrs || {})[m[1]] || '').includes(value));
+  }
+
+  m = /^starts-with\(\s*@([\w:-]+)\s*,\s*(?:"([^"]*)"|'([^']*)')\s*\)$/.exec(pred);
+  if (m) {
+    const value = m[2] ?? m[3];
+    return nodes.filter((n) => String((n.attrs || {})[m[1]] || '').startsWith(value));
+  }
+
+  m = /^ends-with\(\s*@([\w:-]+)\s*,\s*(?:"([^"]*)"|'([^']*)')\s*\)$/.exec(pred);
+  if (m) {
+    const value = m[2] ?? m[3];
+    return nodes.filter((n) => String((n.attrs || {})[m[1]] || '').endsWith(value));
+  }
+
+  // 简写的属性匹配：@class*="x"、@href^="/play/"、@href$=".html"、@class~="item"
+  m = /^@([\w:-]+)\s*(\*=|\^=|\$=|~=)\s*(?:"([^"]*)"|'([^']*)')$/.exec(pred);
+  if (m) {
+    const attr = String((m[3] ?? m[4]) || '');
+    return nodes.filter((n) => {
+      const value = String((n.attrs || {})[m[1]] || '');
+      if (m[2] === '*=') return value.includes(attr);
+      if (m[2] === '^=') return value.startsWith(attr);
+      if (m[2] === '$=') return value.endsWith(attr);
+      return value.split(/\s+/).includes(attr);
+    });
   }
 
   m = /^@([\w:-]+)$/.exec(pred);
@@ -488,6 +539,8 @@ module.exports = {
   parseHtml,
   parseDocument,
   nodeText,
+  resolveUrl,
+  resolvePlayUrls,
   selectJson,
   xpathSelect,
   xpathValues,
